@@ -139,10 +139,10 @@ def get_time_in_seconds():
 
 
 def help_text():
-    print("Usage: bulk_validate.py -f <PATH> OR -w <PATH>\n")
+    print("Usage: bulk_validate.py [-f <PATH>] OR [-w <PATH>]\n")
     print("Where -f <PATH> is the path to a plain text file. Each line of the file should be a unique path to \n")
     print("a bag you want to validate.\n")
-    print("Where -w <PATH> is the path to a TLD that may have bags underneath. This will walk the entire tree " \
+    print("Where -w <PATH> is the path to a TLD that may have bags underneath. This will walk the entire tree "
           "looking for bags and will validate any bag it finds.")
 
 if __name__ == '__main__':
@@ -157,17 +157,13 @@ if __name__ == '__main__':
     for opt, arg in opts:
         if opt == "-f":
             paths_file = open(arg, "r")
-            for line in paths_file.readlines():
-                bval = BagValidator(arg)
-                print()
-        if opt == "-i":
-            bval = BagValidator(arg)
-            print()
+            for path in paths_file.readlines():
+                bval = BagValidator(None)
+                bval.bag_validate_single(path)
         if opt == "-w":
             bfinder = BagFinder(arg)
             bfinder.find_bag_path()
             bval = BagValidator(bfinder.bags)
             bval.bag_validate_bulk()
-            print()
         if opt == "-h":
             help_text()
