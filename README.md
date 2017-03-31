@@ -12,7 +12,7 @@ To install pywin32 use this pip command.
 
 `C:\pip install pywin32`
 
-Usage: `bulk_validate.py -f <PATH> | -w <PATH>`
+Usage: `bulk_validate.py [-f <PATH>] OR [-w <PATH>]`
     
 Where `-f <PATH>` is the path to a plain text file. 
 Each line of the file should be a unique path to a bag you want to validate.
