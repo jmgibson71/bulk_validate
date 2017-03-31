@@ -5,11 +5,11 @@ import os
 import sys
 import getopt
 import itertools
-
-
 from bagit import *
 from datetime import date
 from datetime import datetime
+import win32api, win32con
+import platform
 
 paths_file = ""
 
@@ -20,11 +20,108 @@ report_logger = logging.getLogger(__name__)
 trim = []
 
 
-def set_loggers(cwd):
+class BagValidator:
 
+    def __init__(self, path):
+        self.path = path  # type: list
+        self.validator_log = LogName()
+
+    def bag_validate_bulk(self):
+        for path in self.path:
+            self._validator(path.strip("\n"))
+
+    def bag_validate_single(self, path):
+        self._validator(path.strip("\n"))
+
+    def _validator(self, path):
+        try:
+            bag = Bag(path)
+            report_logger.info("::VALIDATING:: %s" % path)
+            begin = get_time_in_seconds()
+            bag.validate()
+            end = get_time_in_seconds()
+            report_logger.info("::TIME TO VERIFY:: %d minute(s)" % ((end - begin) / 60))
+            report_logger.info("::VALID::".rjust(4) + " ".rjust(4) + path.rjust(4))
+            return 1
+        except BagValidationError as e:
+            for d in e.details:
+                if isinstance(d, ChecksumMismatch):
+                    report_logger.error('Expected {} to have {} checksum of {} but found {}'
+                             .format(d.path, d.algorithm, d.expected, d.found))
+                elif isinstance(d, FileMissing):
+                    report_logger.error('The expected file {} is missing'.format(d.path))
+                elif isinstance(d, UnexpectedFile):
+                    report_logger.error('Found a file {} that is not in the manifest'.format(d.path))
+                else:
+                    pass
+            report_logger.error('{}: {}'.format(e, path))
+            report_logger.info("::INVALID::".rjust(4) + " ".rjust(4) + path.rjust(4))
+            return 1
+        except OSError as we:
+            report_logger.critical(we.strerror)
+            report_logger.critical(we.filename)
+            report_logger.info("::INVALID::".rjust(4) + " ".rjust(4) + path.rjust(4))
+            return 1
+        except Exception as e:
+            report_logger.critical(e)
+            report_logger.info("::INVALID::".rjust(4) + " ".rjust(4) + path.rjust(4))
+            return 1
+
+
+class BagFinder:
+    def __init__(self, path):
+        self.search_path = os.path.abspath(path)
+        self.bags = []
+
+    def find_bag_path(self):
+        report_logger.info("Scanning {} for bags.".format(self.search_path))
+        spinner = itertools.cycle(['-', '/', '|', '\\'])
+        for root, dirs, files in os.walk(self.search_path):
+            # Remove hidden directories from the search tree.
+            dirs[:] = [d for d in dirs if not self._is_file_hidden(os.path.join(root, d))]
+            if self._is_file_hidden(root):
+                continue
+            for f in files:
+                sys.stdout.write(next(spinner))
+                sys.stdout.flush()
+                sys.stdout.write('\b')
+                if f == "bagit.txt":
+                    report_logger.info("Found a bag {}".format(root))
+                    # Trim the branch
+                    dirs[:] = [d for d in dirs if not root]
+                    self.bags.append(root)
+                    break
+
+    @staticmethod
+    def _is_file_hidden(file):
+        try:
+            if platform.system() == 'Windows':
+                attr = win32api.GetFileAttributes(str(file))
+                if attr & (win32con.FILE_ATTRIBUTE_HIDDEN | win32con.FILE_ATTRIBUTE_SYSTEM):
+                    return True
+            else:
+                if file == '.':
+                    return True
+            return False
+        except Exception as e:
+            pass
+
+
+class LogName:
+    def __init__(self, assigned=None, location=os.getcwd()):
+        self.assigned = assigned
+        self.location = location
+
+    def get_log_name(self):
+        if not self.assigned:
+            time = datetime.now()
+            return '{}{}{}_validation_report.txt'.format(time.year, time.month, time.day)
+
+
+def set_loggers(cwd):
         report_logger.setLevel(logging.DEBUG)
 
-        handler_rl = logging.FileHandler(join(cwd, 'validation_report.log'))
+        handler_rl = logging.FileHandler(join(cwd, LogName().get_log_name()))
         command_line = logging.StreamHandler(sys.stdout)
 
         formatter = logging.Formatter('%(levelname)s: %(asctime)s %(message)s')
@@ -39,57 +136,6 @@ def set_loggers(cwd):
 def get_time_in_seconds():
     time = datetime.now()
     return time.hour*3600 + time.minute*60 + time.second
-
-
-def bag_validate(path):
-    path = path.strip("\n")
-    try:
-        bag = Bag(path)
-        report_logger.info("::VALIDATING:: %s" % path)
-        begin = get_time_in_seconds()
-        bag.validate(8)
-        end = get_time_in_seconds()
-
-        report_logger.info("::TIME TO VERIFY:: %d minute(s)" % ((end - begin) / 60))
-        report_logger.info("::VALID::".rjust(4) + " ".rjust(4) + path.rjust(4))
-        return 1
-    except BagValidationError as e:
-        report_logger.critical(e.message)
-        return 1
-    except BagError as be:
-        report_logger.critical(be.args)
-        return 1
-    except OSError as we:
-        report_logger.critical(we.strerror)
-        report_logger.critical(we.filename)
-        return 1
-    except:
-        e = sys.exc_info()[0]
-        report_logger.critical(e.message)
-        return 1
-
-
-def spinning_cursor():
-    while True:
-        for cursor in '|/-\\':
-            yield cursor
-
-
-def find_bag_path(path):
-    print("Scanning {} for bags".format(path))
-    bags = []
-    spinner = itertools.cycle(['-', '/', '|', '\\'])
-    for root, dirs, files in os.walk(path):
-        for f in files:
-            sys.stdout.write(next(spinner))
-            sys.stdout.flush()
-            sys.stdout.write('\b')
-            if f == "bagit.txt":
-                print("Found a bag.")
-                bags.append(root)
-    print("Validating bags...")
-    for path in bags:
-        bag_validate(path)
 
 
 def help_text():
@@ -112,10 +158,16 @@ if __name__ == '__main__':
         if opt == "-f":
             paths_file = open(arg, "r")
             for line in paths_file.readlines():
-                bag_validate(line)
+                bval = BagValidator(arg)
+                print()
         if opt == "-i":
-            bag_validate(arg)
+            bval = BagValidator(arg)
+            print()
         if opt == "-w":
-            find_bag_path(arg)
+            bfinder = BagFinder(arg)
+            bfinder.find_bag_path()
+            bval = BagValidator(bfinder.bags)
+            bval.bag_validate_bulk()
+            print()
         if opt == "-h":
             help_text()
