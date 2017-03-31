@@ -1,6 +1,7 @@
 bulk_validate.py v1
 
 Requires Python 3.4+ and [Library of Congress' bagit-python](https://github.com/LibraryOfCongress/bagit-python) installed.
+
 Requires pywin32
 
 If pip is installed in your python distribution, to install bagit-python just enter: 
