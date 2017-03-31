@@ -1,5 +1,3 @@
-from __future__ import division
-
 import logging
 import os
 import sys
@@ -8,7 +6,8 @@ import itertools
 from bagit import *
 from datetime import date
 from datetime import datetime
-import win32api, win32con
+import win32api
+import win32con
 import platform
 
 paths_file = ""
